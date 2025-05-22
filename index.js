@@ -1,53 +1,65 @@
 const express = require('express');
-const cors = require('cors');
 const fetch = require('node-fetch');
-
 const app = express();
-const port = 4000; // แยก port เป็น 4000 หรืออะไรก็ได้ที่ว่าง
-const webhookURL = process.env.DISCORD_WEBHOOK_URL; // ใส่ webhook URL ใน env
 
-app.use(cors());
 app.use(express.json());
 
-app.post('/notify', async (req, res) => {
-  const { username, result, item } = req.body;
+const DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/xxx/yyy';
 
-  if (!username || !result || !item) {
-    return res.status(400).json({ success: false, message: 'ข้อมูลไม่ครบ' });
+async function sendDiscord(message, embed) {
+  const payload = embed ? { embeds: [embed] } : { content: message };
+  try {
+    const res = await fetch(DISCORD_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      console.error('Discord webhook error:', text);
+    }
+  } catch (e) {
+    console.error('Failed to send Discord notification:', e);
   }
+}
 
-  let content = '';
-  let embed = null;
+app.post('/discord-notify', async (req, res) => {
+  const { result, name, username } = req.body;
 
-  if (result === 'success') {
-    embed = {
-      title: `🎉 ${username} อัพเกรดสำเร็จ!`,
-      description: `ได้รับไอเท็มระดับสูง: ${item}`,
-      color: 0x00ff00,
-      timestamp: new Date().toISOString(),
-    };
-  } else if (result === 'fail') {
-    content = `⚠️ ${username} อัพเกรดไม่สำเร็จสำหรับไอเท็ม ${item}`;
-  } else if (result === 'broken') {
-    content = `💥 ${username} ไอเท็ม ${item} ถูกทำลายระหว่างอัพเกรด!`;
-  } else {
-    content = `${username} มีผลลัพธ์ไม่รู้จัก: ${result}`;
+  if (!result || (!name && !username)) {
+    return res.status(400).json({ error: 'Missing required fields' });
   }
 
   try {
-    await fetch(webhookURL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(embed ? { embeds: [embed] } : { content }),
-    });
+    if (result === 'สำเร็จ') {
+      const embed = {
+        title: `🎉 ${(name || username)} ได้อัพเกรดสำเร็จ!`,
+        description: `ไอเท็มมีระดับสูงขึ้นเป็น "Warzone S.GOD+7"!!`,
+        color: 0x00FF00,
+        image: {
+          url: "https://img5.pic.in.th/file/secure-sv1/image_2025-05-21_025140493-removebg-preview.png"
+        },
+        footer: { text: "ได้รับไอเท็ม Warzone S.GOD+7" },
+        timestamp: new Date().toISOString(),
+      };
+      await sendDiscord(null, embed);
 
-    res.json({ success: true, message: 'ส่งแจ้งเตือน Discord สำเร็จ' });
-  } catch (err) {
-    console.error('ส่ง Discord webhook ล้มเหลว:', err);
-    res.status(500).json({ success: false, message: 'ส่งแจ้งเตือนไม่สำเร็จ' });
+    } else if (result === 'ล้มเหลว') {
+      await sendDiscord(`⚠️ ${(name || username)} ได้อัพเกรดปลอก TOPGM ล้มเหลว! ขอให้โชคดีครั้งหน้า`);
+
+    } else if (result === 'แตก') {
+      await sendDiscord(`💥 ${(name || username)} ได้อัพเกรดล้มเหลว! ไอเท็มปลอก TOPGM ถูกทำลาย`);
+
+    } else {
+      return res.status(400).json({ error: 'Unknown result value' });
+    }
+
+    res.json({ status: 'sent' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-app.listen(port, () => {
-  console.log(`Discord notify server running at http://localhost:${port}`);
-});
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Discord notify service running on port ${PORT}`));
